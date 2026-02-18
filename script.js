@@ -15,15 +15,64 @@ const form = document.getElementById("item-form");
 const itemsList = document.getElementById("items-list");
 const filterType = document.getElementById("filter-type");
 const yearSpan = document.getElementById("year");
+const submitBtn = document.getElementById("submit-btn");
+const btnText = submitBtn.querySelector(".btn-text");
+const btnLoader = submitBtn.querySelector(".btn-loader");
+const loadingState = document.getElementById("loading-state");
+const toast = document.getElementById("toast");
+const toastMessage = document.getElementById("toast-message");
+const toastClose = document.getElementById("toast-close");
 
 yearSpan.textContent = new Date().getFullYear();
 
 form.addEventListener("submit", handleFormSubmit);
 filterType.addEventListener("change", () => renderItems());
+toastClose.addEventListener("click", hideToast);
+
+// ---------- Toast Notification Functions ----------
+function showToast(message, type = "info") {
+  toastMessage.textContent = message;
+  toast.className = `toast ${type}`;
+  toast.classList.add("show");
+  
+  // Auto hide after 4 seconds
+  setTimeout(() => {
+    hideToast();
+  }, 4000);
+}
+
+function hideToast() {
+  toast.classList.remove("show");
+}
+
+// ---------- Loading State Functions ----------
+function setLoading(isLoading) {
+  if (isLoading) {
+    submitBtn.disabled = true;
+    btnText.style.display = "none";
+    btnLoader.style.display = "inline-flex";
+  } else {
+    submitBtn.disabled = false;
+    btnText.style.display = "inline-block";
+    btnLoader.style.display = "none";
+  }
+}
+
+function setItemsLoading(isLoading) {
+  if (isLoading) {
+    loadingState.style.display = "block";
+    itemsList.style.opacity = "0.5";
+  } else {
+    loadingState.style.display = "none";
+    itemsList.style.opacity = "1";
+  }
+}
 
 // ---------- Form submit -> upload image + save row ----------
 async function handleFormSubmit(event) {
   event.preventDefault();
+
+  setLoading(true);
 
   const formData = new FormData(form);
 
@@ -36,69 +85,113 @@ async function handleFormSubmit(event) {
   const contact = formData.get("contact")?.trim() || "";
   const file = formData.get("photo");
 
-  let imageUrl = null;
-
-  // 1) Image Supabase Storage me upload karo (agar diya hai)
-  if (file && file.size > 0) {
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const filePath = `items/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
-
-    const { data: uploadData, error: uploadError } = await supabaseClient
-      .storage
-      .from(STORAGE_BUCKET)
-      .upload(filePath, file);
-
-    if (uploadError) {
-      alert("Image upload failed: " + uploadError.message);
-      return;
-    }
-
-    const { data: publicUrlData } = supabaseClient
-      .storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(uploadData.path);
-
-    imageUrl = publicUrlData?.publicUrl || null;
-  }
-
-  // 2) Row items table me insert karo
-  const { error: insertError } = await supabaseClient.from("items").insert({
-    type,
-    title,
-    category,
-    location,
-    date,
-    description,
-    contact,
-    image_url: imageUrl
-  });
-
-  if (insertError) {
-    alert("Failed to post item: " + insertError.message);
+  if (!title) {
+    setLoading(false);
+    showToast("Please enter an item title", "error");
     return;
   }
 
-  form.reset();
-  await fetchItems();
+  let imageUrl = ""; // Empty string instead of null (for NOT NULL constraint)
+
+  try {
+    // 1) Image Supabase Storage me upload karo (agar diya hai)
+    if (file && file.size > 0) {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const filePath = `items/${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${ext}`;
+
+      const { data: uploadData, error: uploadError } = await supabaseClient
+        .storage
+        .from(STORAGE_BUCKET)
+        .upload(filePath, file);
+
+      if (uploadError) {
+        setLoading(false);
+        showToast("Image upload failed: " + uploadError.message, "error");
+        return;
+      }
+
+      const { data: publicUrlData } = supabaseClient
+        .storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(uploadData.path);
+
+      imageUrl = publicUrlData?.publicUrl || "";
+    }
+
+    // 2) Row items table me insert karo
+    // Prepare data object - only include image_url if it has a value
+    const insertData = {
+      type,
+      title,
+      category,
+      location: location || "",
+      date: date || "",
+      description: description || "",
+      contact: contact || ""
+    };
+    
+    // Only add image_url if it's not empty
+    if (imageUrl && imageUrl.trim() !== "") {
+      insertData.image_url = imageUrl;
+    } else {
+      insertData.image_url = ""; // Empty string instead of null
+    }
+
+    const { error: insertError } = await supabaseClient.from("items").insert(insertData);
+
+    if (insertError) {
+      setLoading(false);
+      showToast("Failed to post item: " + insertError.message, "error");
+      return;
+    }
+
+    // Success!
+    form.reset();
+    setLoading(false);
+    showToast("Item posted successfully! 🎉", "success");
+    
+    // Scroll to items section
+    document.getElementById("list-section").scrollIntoView({ 
+      behavior: "smooth", 
+      block: "start" 
+    });
+    
+    await fetchItems();
+  } catch (error) {
+    setLoading(false);
+    showToast("Something went wrong. Please try again.", "error");
+    console.error("Error:", error);
+  }
 }
 
 // ---------- DB se items fetch ----------
 async function fetchItems() {
-  const { data, error } = await supabaseClient
-    .from("items")
-    .select("*")
-    .order("created_at", { ascending: false });
+  setItemsLoading(true);
+  
+  try {
+    const { data, error } = await supabaseClient
+      .from("items")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("Error fetching items:", error);
+    if (error) {
+      console.error("Error fetching items:", error);
+      items = [];
+      showToast("Failed to load items. Please refresh the page.", "error");
+    } else {
+      items = data || [];
+    }
+
+    renderItems();
+  } catch (error) {
+    console.error("Error:", error);
     items = [];
-  } else {
-    items = data || [];
+    showToast("Something went wrong while loading items.", "error");
+  } finally {
+    setItemsLoading(false);
   }
-
-  renderItems();
 }
 
 // ---------- Render list ----------
