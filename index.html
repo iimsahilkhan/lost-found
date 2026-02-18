@@ -113,9 +113,21 @@
             <p class="hint">Optional, but helps people recognize the item.</p>
           </div>
 
-          <button type="submit" class="btn-primary">Post Item</button>
+          <button type="submit" class="btn-primary" id="submit-btn">
+            <span class="btn-text">Post Item</span>
+            <span class="btn-loader" style="display: none;">
+              <span class="spinner"></span>
+              Posting...
+            </span>
+          </button>
         </form>
       </section>
+
+      <!-- Toast Notification -->
+      <div id="toast" class="toast" role="alert" aria-live="polite">
+        <span id="toast-message"></span>
+        <button id="toast-close" class="toast-close" aria-label="Close">×</button>
+      </div>
 
       <section id="list-section" class="list-section">
         <div class="list-header">
@@ -133,11 +145,15 @@
         <div id="items-list" class="items-grid">
           <!-- Cards will be inserted here by JavaScript -->
         </div>
+        <div id="loading-state" class="loading-state" style="display: none;">
+          <div class="spinner-large"></div>
+          <p>Loading items...</p>
+        </div>
       </section>
     </main>
 
     <footer class="footer">
-      <p>University Lost &amp; Found Platform &copy; <span id="year"></span></p>
+      <p>University Lost &amp; Found Platform By ALBATROSS &copy; <span id="year"></span></p>
     </footer>
   </div>
 
